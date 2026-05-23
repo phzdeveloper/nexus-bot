@@ -1,7 +1,10 @@
 import discord
 from discord.ext import commands, tasks
+from discord.ui import View, Button
 from collections import defaultdict
 from dotenv import load_dotenv
+from datetime import datetime
+import asyncio
 import os
 
 # =========================
@@ -12,8 +15,9 @@ load_dotenv()
 
 TOKEN = os.getenv("TOKEN")
 
-CANAL_RANKING_ID = 1432155030903066675  # ID do canal
-CARGO_STAFF_ID = 1432185441750093904    # ID do cargo staff
+CANAL_RANKING_ID = 1432155030903066675
+CANAL_METAS_ID = 1499492871500337366
+CARGO_STAFF_ID = 1432155075215884358
 
 intents = discord.Intents.all()
 
@@ -37,10 +41,21 @@ ranking_message = None
 @bot.event
 async def on_ready():
 
-    print(f"Online como {bot.user}")
+    print(f"[NEXUS] Online como {bot.user}")
+
+    try:
+        synced = await bot.tree.sync()
+
+        print(f"{len(synced)} slash commands sincronizados.")
+
+    except Exception as e:
+        print(e)
 
     atualizar_ranking.start()
 
+# =========================
+# CONTADOR DE MSGS
+# =========================
 
 @bot.event
 async def on_message(message):
@@ -48,7 +63,10 @@ async def on_message(message):
     if message.author.bot:
         return
 
-    if any(role.id == CARGO_STAFF_ID for role in message.author.roles):
+    if any(
+        role.id == CARGO_STAFF_ID
+        for role in message.author.roles
+    ):
 
         mensagens[message.author.id] += 1
 
@@ -58,7 +76,7 @@ async def on_message(message):
 # RANKING
 # =========================
 
-@tasks.loop(minutes=30)
+@tasks.loop(minutes=1)
 async def atualizar_ranking():
 
     global ranking_message
@@ -108,13 +126,13 @@ async def atualizar_ranking():
             "📊 **Classificação**\n\n"
             f"{descricao}\n"
             "━━━━━━━━━━━━━━━━━━\n"
-            "Atualiza automaticamente a cada 30 minutos"
+            "⏱️ Atualiza automaticamente a cada 1 minuto"
         ),
-        color=0xffd700
+        color=0x5865F2
     )
 
     embed.set_footer(
-        text="Nexus Ranking System"
+        text=f"Hoje às {datetime.now().strftime('%H:%M')}"
     )
 
     view = RankingView()
@@ -122,6 +140,7 @@ async def atualizar_ranking():
     if ranking_message:
 
         try:
+
             await ranking_message.edit(
                 embed=embed,
                 view=view
@@ -142,10 +161,10 @@ async def atualizar_ranking():
         )
 
 # =========================
-# BOTÃO RESET
+# BOTÕES RANKING
 # =========================
 
-class RankingView(discord.ui.View):
+class RankingView(View):
 
     def __init__(self):
         super().__init__(timeout=None)
@@ -158,7 +177,7 @@ class RankingView(discord.ui.View):
     async def reset_button(
         self,
         interaction: discord.Interaction,
-        button: discord.ui.Button
+        button: Button
     ):
 
         if not interaction.user.guild_permissions.administrator:
@@ -176,16 +195,137 @@ class RankingView(discord.ui.View):
         )
 
 # =========================
-# COMANDO MANUAL
+# PAINEL DE METAS
 # =========================
 
-@bot.command()
-async def ranking(ctx):
+class MetaView(View):
+
+    def __init__(self):
+        super().__init__(timeout=None)
+
+    @discord.ui.button(
+        label="Ver Meta",
+        style=discord.ButtonStyle.primary,
+        emoji="📊"
+    )
+    async def ver_meta(
+        self,
+        interaction: discord.Interaction,
+        button: Button
+    ):
+
+        await interaction.response.send_message(
+            "Sistema de metas em desenvolvimento.",
+            ephemeral=True
+        )
+
+    @discord.ui.button(
+        label="Relatório",
+        style=discord.ButtonStyle.secondary,
+        emoji="📄"
+    )
+    async def relatorio(
+        self,
+        interaction: discord.Interaction,
+        button: Button
+    ):
+
+        ranking = sorted(
+            mensagens.items(),
+            key=lambda x: x[1],
+            reverse=True
+        )
+
+        texto = ""
+
+        for user_id, total in ranking:
+
+            membro = interaction.guild.get_member(user_id)
+
+            if membro:
+
+                texto += (
+                    f"{membro.name} — "
+                    f"{total} mensagens\n"
+                )
+
+        embed = discord.Embed(
+            title="📄 Relatório Geral",
+            description=texto if texto else "Sem dados.",
+            color=0x5865F2
+        )
+
+        await interaction.response.send_message(
+            embed=embed,
+            ephemeral=True
+        )
+
+    @discord.ui.button(
+        label="Apagar Relatórios",
+        style=discord.ButtonStyle.danger,
+        emoji="🗑️"
+    )
+    async def apagar_relatorios(
+        self,
+        interaction: discord.Interaction,
+        button: Button
+    ):
+
+        if not interaction.user.guild_permissions.administrator:
+
+            return await interaction.response.send_message(
+                "Sem permissão.",
+                ephemeral=True
+            )
+
+        await interaction.channel.purge(limit=100)
+
+        await interaction.response.send_message(
+            "Relatórios apagados.",
+            ephemeral=True
+        )
+
+# =========================
+# SLASH COMMANDS
+# =========================
+
+@bot.tree.command(
+    name="ranking",
+    description="Atualiza o ranking"
+)
+async def ranking(interaction: discord.Interaction):
 
     await atualizar_ranking()
 
-    await ctx.send(
-        "Ranking atualizado."
+    await interaction.response.send_message(
+        "Ranking atualizado.",
+        ephemeral=True
+    )
+
+
+@bot.tree.command(
+    name="metas",
+    description="Abre o painel de metas"
+)
+async def metas(interaction: discord.Interaction):
+
+    embed = discord.Embed(
+        title="📌 Painel de Metas",
+        description=(
+            "📋 Ver Meta → veja suas horas e mensagens\n"
+            "📄 Relatório → relatório geral dos staffs\n"
+            "🗑️ Apagar Relatórios → limpa o canal de relatórios"
+        ),
+        color=0x5865F2
+    )
+
+    embed.set_footer(
+        text="Nexus Meta System"
+    )
+
+    await interaction.response.send_message(
+        embed=embed,
+        view=MetaView()
     )
 
 # =========================
