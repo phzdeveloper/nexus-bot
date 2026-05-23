@@ -1,17 +1,34 @@
 import discord
-from discord.ext import commands
-from discord.ui import View, Button
+from discord.ext import commands, tasks
+from collections import defaultdict
 from dotenv import load_dotenv
 import os
-import asyncio
-from datetime import datetime
+
+# =========================
+# CONFIG
+# =========================
 
 load_dotenv()
+
 TOKEN = os.getenv("TOKEN")
+
+CANAL_RANKING_ID = 1432155030903066675  # ID do canal
+CARGO_STAFF_ID = 1432185441750093904    # ID do cargo staff
 
 intents = discord.Intents.all()
 
-bot = commands.Bot(command_prefix="/", intents=intents)
+bot = commands.Bot(
+    command_prefix="!",
+    intents=intents
+)
+
+# =========================
+# DATABASE
+# =========================
+
+mensagens = defaultdict(int)
+
+ranking_message = None
 
 # =========================
 # EVENTOS
@@ -19,68 +36,160 @@ bot = commands.Bot(command_prefix="/", intents=intents)
 
 @bot.event
 async def on_ready():
-    print(f"[NEXUS SECURITY] Online como {bot.user}")
-    await bot.change_presence(
-        activity=discord.Activity(
-            type=discord.ActivityType.watching,
-            name="Protegendo o servidor"
-        )
-    )
 
+    print(f"Online como {bot.user}")
 
-@bot.event
-async def on_member_join(member):
-    canal = discord.utils.get(member.guild.text_channels, name="logs")
+    atualizar_ranking.start()
 
-    if canal:
-        embed = discord.Embed(
-            title="Novo membro detectado",
-            description=f"{member.mention} entrou no servidor.",
-            color=0x00ff00,
-            timestamp=datetime.utcnow()
-        )
-        embed.set_thumbnail(url=member.display_avatar.url)
-        await canal.send(embed=embed)
-
-
-@bot.event
-async def on_member_remove(member):
-    canal = discord.utils.get(member.guild.text_channels, name="logs")
-
-    if canal:
-        embed = discord.Embed(
-            title="Membro saiu",
-            description=f"{member.name} saiu do servidor.",
-            color=0xff0000,
-            timestamp=datetime.utcnow()
-        )
-        await canal.send(embed=embed)
-
-
-# =========================
-# ANTI LINK
-# =========================
-
-LINKS_BLOQUEADOS = [
-    "discord.gg/",
-    "https://",
-    "http://"
-]
 
 @bot.event
 async def on_message(message):
+
     if message.author.bot:
         return
 
-    if not message.author.guild_permissions.administrator:
-        for link in LINKS_BLOQUEADOS:
-            if link in message.content.lower():
-                await message.delete()
+    if any(role.id == CARGO_STAFF_ID for role in message.author.roles):
 
-                aviso = await message.channel.send(
-                    f"{message.author.mention} links não são permitidos."
-                )
+        mensagens[message.author.id] += 1
 
-                await asyncio.sleep(5)
-                await aviso.delete()
+    await bot.process_commands(message)
+
+# =========================
+# RANKING
+# =========================
+
+@tasks.loop(minutes=30)
+async def atualizar_ranking():
+
+    global ranking_message
+
+    canal = bot.get_channel(CANAL_RANKING_ID)
+
+    if not canal:
+        return
+
+    ranking = sorted(
+        mensagens.items(),
+        key=lambda x: x[1],
+        reverse=True
+    )[:10]
+
+    descricao = ""
+
+    medalhas = [
+        "🥇",
+        "🥈",
+        "🥉",
+        "🔹",
+        "🔹",
+        "🔹",
+        "🔹",
+        "🔹",
+        "🔹",
+        "🔹"
+    ]
+
+    for i, (user_id, total) in enumerate(ranking):
+
+        membro = canal.guild.get_member(user_id)
+
+        if membro:
+
+            descricao += (
+                f"{medalhas[i]} "
+                f"{membro.mention} — "
+                f"**{total} mensagens**\n"
+            )
+
+    embed = discord.Embed(
+        title="🏆 Ranking de Mensagens",
+        description=(
+            "Top 10 membros mais ativos 💬\n\n"
+            "📊 **Classificação**\n\n"
+            f"{descricao}\n"
+            "━━━━━━━━━━━━━━━━━━\n"
+            "Atualiza automaticamente a cada 30 minutos"
+        ),
+        color=0xffd700
+    )
+
+    embed.set_footer(
+        text="Nexus Ranking System"
+    )
+
+    view = RankingView()
+
+    if ranking_message:
+
+        try:
+            await ranking_message.edit(
+                embed=embed,
+                view=view
+            )
+
+        except:
+
+            ranking_message = await canal.send(
+                embed=embed,
+                view=view
+            )
+
+    else:
+
+        ranking_message = await canal.send(
+            embed=embed,
+            view=view
+        )
+
+# =========================
+# BOTÃO RESET
+# =========================
+
+class RankingView(discord.ui.View):
+
+    def __init__(self):
+        super().__init__(timeout=None)
+
+    @discord.ui.button(
+        label="Resetar Ranking",
+        style=discord.ButtonStyle.danger,
+        emoji="🗑️"
+    )
+    async def reset_button(
+        self,
+        interaction: discord.Interaction,
+        button: discord.ui.Button
+    ):
+
+        if not interaction.user.guild_permissions.administrator:
+
+            return await interaction.response.send_message(
+                "Sem permissão.",
+                ephemeral=True
+            )
+
+        mensagens.clear()
+
+        await interaction.response.send_message(
+            "Ranking resetado.",
+            ephemeral=True
+        )
+
+# =========================
+# COMANDO MANUAL
+# =========================
+
+@bot.command()
+async def ranking(ctx):
+
+    await atualizar_ranking()
+
+    await ctx.send(
+        "Ranking atualizado."
+    )
+
+# =========================
+# START
+# =========================
+
 bot.run(TOKEN)
