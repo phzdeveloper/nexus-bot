@@ -16,15 +16,20 @@ intents.moderation = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
 
-@bot.event
-async def on_ready():
+async def setup_hook():
     await bot.load_extension("cogs.moderacao")
     await bot.load_extension("cogs.config")
 
     guild = discord.Object(id=GUILD_ID)
     bot.tree.copy_global_to(guild=guild)
     await bot.tree.sync(guild=guild)
+    print("✅ Comandos sincronizados!")
 
+bot.setup_hook = setup_hook
+
+
+@bot.event
+async def on_ready():
     print(f"✅ Nexus Ascension Bot online como {bot.user}")
     print(f"📡 Servidores conectados: {len(bot.guilds)}")
 
