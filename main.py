@@ -1,1 +1,27 @@
+import discord
+from discord.ext import commands
+import os
+from dotenv import load_dotenv
 
+load_dotenv()
+
+TOKEN = os.getenv("DISCORD_TOKEN")
+
+intents = discord.Intents.default()
+intents.members = True
+intents.message_content = True
+intents.moderation = True
+
+bot = commands.Bot(command_prefix="!", intents=intents)
+
+
+@bot.event
+async def on_ready():
+    await bot.load_extension("cogs.moderacao")
+    await bot.load_extension("cogs.config")
+    await bot.tree.sync()
+    print(f"✅ Nexus Ascension Bot online como {bot.user}")
+    print(f"📡 Servidores conectados: {len(bot.guilds)}")
+
+
+bot.run(TOKEN)
