@@ -1,1 +1,17 @@
-
+{
+  "name": "nexus-system",
+  "version": "1.0.0",
+  "description": "Nexus Community Staff System",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "nodemon src/index.js"
+  },
+  "dependencies": {
+    "discord.js": "^14.21.0",
+    "dotenv": "^16.5.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.10"
+  }
+}
